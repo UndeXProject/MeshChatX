@@ -10,9 +10,16 @@ import DownloadUtils from "@/js/DownloadUtils";
 import GlobalEmitter from "@/js/GlobalEmitter";
 import NotificationUtils from "@/js/NotificationUtils";
 
+const codec2LoaderMocks = vi.hoisted(() => ({
+    ensureCodec2ScriptsLoaded: vi.fn(() => Promise.resolve()),
+}));
+
+vi.mock("@/js/Codec2Loader", () => codec2LoaderMocks);
+
 vi.mock("@/js/DialogUtils", () => ({
     default: {
         confirm: vi.fn(() => Promise.resolve(true)),
+        alert: vi.fn(),
     },
 }));
 
@@ -37,6 +44,8 @@ describe("ConversationViewer.vue", () => {
     let axiosMock;
 
     beforeEach(() => {
+        codec2LoaderMocks.ensureCodec2ScriptsLoaded.mockReset();
+        codec2LoaderMocks.ensureCodec2ScriptsLoaded.mockResolvedValue(undefined);
         GlobalState.config.theme = "light";
         GlobalState.config.message_outbound_bubble_color = "#4f46e5";
         GlobalState.config.message_waiting_bubble_color = "#e5e7eb";
@@ -852,6 +861,41 @@ describe("ConversationViewer.vue", () => {
         await vi.waitFor(() =>
             expect(axiosMock.get).toHaveBeenCalledWith(expect.stringContaining("/audio"), expect.any(Object))
         );
+    });
+
+    it("waits for Codec2 scripts before starting a Codec2 recording", async () => {
+        let finishLoading;
+        codec2LoaderMocks.ensureCodec2ScriptsLoaded.mockImplementation(
+            () =>
+                new Promise((resolve) => {
+                    finishLoading = resolve;
+                })
+        );
+        const start = vi.fn().mockResolvedValue(true);
+        const Recorder = vi.fn(function () {
+            this.codec2Mode = null;
+            this.start = start;
+        });
+        vi.stubGlobal("Codec2MicrophoneRecorder", Recorder);
+        const wrapper = mountConversationViewer();
+        await flushPromises();
+
+        const recording = wrapper.vm.startRecordingAudioAttachment({
+            codec: "codec2",
+            mode: "1200",
+        });
+        await Promise.resolve();
+        expect(Recorder).not.toHaveBeenCalled();
+
+        finishLoading();
+        await recording;
+
+        expect(codec2LoaderMocks.ensureCodec2ScriptsLoaded).toHaveBeenCalledOnce();
+        expect(Recorder).toHaveBeenCalledOnce();
+        expect(start).toHaveBeenCalledOnce();
+        expect(wrapper.vm.audioAttachmentMicrophoneRecorder.codec2Mode).toBe("1200");
+        clearInterval(wrapper.vm.audioAttachmentRecordingTimer);
+        wrapper.unmount();
     });
 
     it("shows retry button in context menu for failed outbound messages", async () => {

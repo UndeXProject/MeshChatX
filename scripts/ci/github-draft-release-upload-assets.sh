@@ -92,10 +92,14 @@ mapfile -t files < <(find "$STAGE" -type f)
 
 {
     if [[ "$TAG" == nightly-* ]]; then
-        echo "**Nightly release** - automated daily snapshot from \`dev\`. Not a stable release, use tagged production releases for daily use."
+        echo "**Nightly release** - automated daily snapshot from the configured nightly source branch. Not a stable release, use tagged production releases for daily use."
         echo
         echo "Commit: \`${GITHUB_SHA:-unknown}\`"
         echo
+        if [[ "${GITHUB_REPOSITORY:-}" != "Quad4-Software/MeshChatX" ]]; then
+            echo "Fork nightlies without Android release-signing secrets contain a debug-signed APK. Uninstall an APK signed with a different key before installing it."
+            echo
+        fi
     elif [[ "$TAG" == preview-dev-* ]]; then
         echo "**Preview release (dev)** - automated snapshot from \`dev\`. Not a stable release, use tagged production releases for daily use."
         echo

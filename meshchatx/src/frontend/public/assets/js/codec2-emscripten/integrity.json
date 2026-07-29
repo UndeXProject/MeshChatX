@@ -8,8 +8,8 @@
     "sox.wasm": "sha384-NMa5LHokdsVBdaUPlK1jnsSQ1nmgAnf8POPAwFpRkfjckdBCUSs1RhRd03CHwDAN",
     "sox.js": "sha384-iSAIvLWRyVYwMrKhVzrmvcCzS5noiipjTxOowhXWkmDW0xFGjLV8YGpppX1qRdum",
     "codec2-lib.js": "sha384-zsX9uAMRA7ZBjLcgR/uc2ZKNnyd41x3/KyKl7NMxTBQ8fXVH+RzNfOmBpVyQmvet",
-    "codec2-microphone-recorder.js": "sha384-Akn96VRTRXneZSwV4ocrapOCdrKAR0oilBW2KuEamp2cvPMayG+vhS0e2tTjXr/m",
-    "processor.js": "sha384-m1JmxQg3+KdNiu25A6ArCGFaaKmN6MzONe+LaphWLPfwXqs8bxD6dWNbehUUG54Y",
+    "codec2-microphone-recorder.js": "sha384-CX0Yy2+3w2dUJiYT3n47L782NRfBkzlo4gM/yONXg2ZYS7eoOjm7cWas5WeTCgLP",
+    "processor.js": "sha384-z74RgHjB/kiUdbKsseDSbC1ZpRXJo1Q0Hq97SPEcKmitv+KRH7M4UBEJLP9hf6KT",
     "wav-encoder.js": "sha384-QToS0oLeqMQo+9wYKkx+pTNlBRZsRKsKplmJB/Plf3LwngxNi+0YFJBkb17aCNIM"
   }
 }

@@ -1699,6 +1699,7 @@ import {
     warmPathIfNeeded,
 } from "../../js/reticulumPathfinding.js";
 import MicrophoneRecorder from "../../js/MicrophoneRecorder";
+import { ensureCodec2ScriptsLoaded } from "../../js/Codec2Loader";
 import WebSocketConnection from "../../js/WebSocketConnection";
 import AddAudioButton from "./composer/AddAudioButton.vue";
 import { fromNow } from "../../libs/datetime.js";
@@ -5387,6 +5388,8 @@ export default {
                     return null;
                 }
 
+                await ensureCodec2ScriptsLoaded();
+
                 // convert to uint8 array
                 let encoded;
                 if (typeof audioBytes === "string") {
@@ -6882,6 +6885,19 @@ export default {
             // handle selected codec
             switch (args.codec) {
                 case "codec2": {
+                    try {
+                        await ensureCodec2ScriptsLoaded();
+                    } catch (e) {
+                        console.error("Codec2 scripts failed to load", e);
+                        DialogUtils.alert(this.buildAudioRecordingFailureMessage());
+                        return;
+                    }
+                    if (typeof Codec2MicrophoneRecorder !== "function") {
+                        console.error("Codec2 microphone recorder is unavailable");
+                        DialogUtils.alert(this.buildAudioRecordingFailureMessage());
+                        return;
+                    }
+
                     // start recording microphone
                     this.audioAttachmentMicrophoneRecorderCodec = "codec2";
                     this.audioAttachmentMicrophoneRecorder = new Codec2MicrophoneRecorder();
