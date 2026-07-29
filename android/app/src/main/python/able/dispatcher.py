@@ -37,7 +37,10 @@ def _to_java_bytes(value):
     if value is None:
         return []
     if isinstance(value, (bytes, bytearray)):
-        return list(value)
+        # Chaquopy has a dedicated unsigned Python bytes -> signed Java byte[]
+        # conversion. A generic list leaves values such as KISS FEND (0xC0)
+        # outside Java byte's signed range and prevents the GATT write.
+        return value
     if isinstance(value, (list, tuple)):
         return list(value)
     try:

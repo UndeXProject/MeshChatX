@@ -143,6 +143,71 @@ def test_normalize_rnode_tcp_host_invalid_config_returns_false(tmp_path):
     assert rnode_support.normalize_rnode_tcp_host_in_config(str(config_path)) is False
 
 
+@pytest.mark.parametrize(
+    ("port", "expected"),
+    [
+        (
+            "ble://aa:bb:cc:dd:ee:ff",
+            {"force_ble": True, "ble_addr": "AA:BB:CC:DD:EE:FF"},
+        ),
+        (
+            " BLE://RNode Test ",
+            {"force_ble": True, "ble_name": "RNode Test"},
+        ),
+        ("ble://", {}),
+        ("/dev/ttyUSB0", {}),
+    ],
+)
+def test_rnode_ble_connection_fields(port, expected):
+    assert rnode_support.rnode_ble_connection_fields(port) == expected
+
+
+def test_normalize_rnode_ble_fields_backfills_mac_and_removes_stale_keys(tmp_path):
+    config_path = tmp_path / "config"
+    config_path.write_text(
+        """[interfaces]
+[[RNode BLE]]
+type = RNodeInterface
+interface_enabled = true
+port = ble://aa:bb:cc:dd:ee:ff
+ble_name = stale-name
+tcp_host = stale.example
+force_tcp = true
+allow_bluetooth = true
+""",
+        encoding="utf-8",
+    )
+
+    assert rnode_support.normalize_rnode_ble_fields_in_config(str(config_path)) is True
+    text = config_path.read_text(encoding="utf-8")
+    assert "force_ble = true" in text
+    assert "ble_addr = AA:BB:CC:DD:EE:FF" in text
+    assert "ble_name" not in text
+    assert "tcp_host" not in text
+    assert "force_tcp" not in text
+    assert "allow_bluetooth" not in text
+
+
+def test_normalize_rnode_ble_fields_uses_name_and_is_idempotent(tmp_path):
+    config_path = tmp_path / "config"
+    config_path.write_text(
+        """[interfaces]
+[[RNode BLE]]
+type = RNodeInterface
+interface_enabled = true
+port = ble://RNode Test
+force_ble = true
+ble_name = RNode Test
+""",
+        encoding="utf-8",
+    )
+
+    assert rnode_support.normalize_rnode_ble_fields_in_config(str(config_path)) is False
+    text = config_path.read_text(encoding="utf-8")
+    assert "ble_name = RNode Test" in text
+    assert "ble_addr" not in text
+
+
 def test_guard_disables_rnode_when_usbserial4a_missing(tmp_path, monkeypatch):
     config_path = tmp_path / "config"
     config_path.write_text(

@@ -1,10 +1,17 @@
 class AudioProcessor extends AudioWorkletProcessor {
     constructor() {
         super();
-        this.bufferSize = 4096; // Adjust the buffer size as needed
-        this.sampleRate = 8000; // Target sample rate
+        this.bufferSize = 4096;
+        this.sourceSampleRate = globalThis.sampleRate || 8000;
+        this.targetSampleRate = 8000;
         this.inputBuffer = new Float32Array(this.bufferSize);
         this.bufferIndex = 0;
+        this.port.onmessage = (event) => {
+            if (event.data?.type === "flush") {
+                this.flush();
+                this.port.postMessage({ type: "flushed" });
+            }
+        };
     }
 
     process(inputs, outputs, parameters) {
@@ -16,8 +23,11 @@ class AudioProcessor extends AudioWorkletProcessor {
                     this.inputBuffer[this.bufferIndex++] = inputData[i];
                 }
                 if (this.bufferIndex === this.bufferSize) {
-                    // Downsample the buffer and send to the main thread
-                    const downsampledBuffer = this.downsampleBuffer(this.inputBuffer, this.sampleRate);
+                    const downsampledBuffer = this.downsampleBuffer(
+                        this.inputBuffer,
+                        this.sourceSampleRate,
+                        this.targetSampleRate
+                    );
                     this.port.postMessage(downsampledBuffer);
                     this.bufferIndex = 0;
                 }
@@ -26,11 +36,27 @@ class AudioProcessor extends AudioWorkletProcessor {
         return true;
     }
 
-    downsampleBuffer(buffer, targetSampleRate) {
-        if (targetSampleRate === this.sampleRate) {
-            return buffer;
+    flush() {
+        if (this.bufferIndex === 0) {
+            return;
         }
-        const sampleRateRatio = this.sampleRate / targetSampleRate;
+        const pending = this.inputBuffer.slice(0, this.bufferIndex);
+        const downsampledBuffer = this.downsampleBuffer(
+            pending,
+            this.sourceSampleRate,
+            this.targetSampleRate
+        );
+        if (downsampledBuffer.length > 0) {
+            this.port.postMessage(downsampledBuffer);
+        }
+        this.bufferIndex = 0;
+    }
+
+    downsampleBuffer(buffer, sourceSampleRate, targetSampleRate) {
+        if (targetSampleRate === sourceSampleRate) {
+            return new Float32Array(buffer);
+        }
+        const sampleRateRatio = sourceSampleRate / targetSampleRate;
         const newLength = Math.round(buffer.length / sampleRateRatio);
         const result = new Float32Array(newLength);
         let offsetResult = 0;

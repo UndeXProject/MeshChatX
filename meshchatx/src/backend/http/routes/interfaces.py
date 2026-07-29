@@ -1246,6 +1246,7 @@ def register_interfaces_routes(routes, app):
                 )
 
             interface_tcp_host = None
+            interface_ble_fields = {}
             if str(interface_port).strip().lower().startswith("tcp://"):
                 interface_port = InterfaceEditor.normalize_rnode_tcp_port(
                     str(interface_port),
@@ -1259,6 +1260,19 @@ def register_interfaces_routes(routes, app):
                         status=422,
                     )
                 interface_tcp_host = host_part
+            elif str(interface_port).strip().lower().startswith("ble://"):
+                from meshchatx.src.backend.rnode_support import (
+                    rnode_ble_connection_fields,
+                )
+
+                interface_ble_fields = rnode_ble_connection_fields(interface_port)
+                if not interface_ble_fields:
+                    return web.json_response(
+                        {
+                            "message": "BLE address or device name is required",
+                        },
+                        status=422,
+                    )
 
             # ensure frequency provided
             interface_frequency = data.get("frequency")
@@ -1323,6 +1337,18 @@ def register_interfaces_routes(routes, app):
                 interface_details["tcp_host"] = interface_tcp_host
             else:
                 interface_details.pop("tcp_host", None)
+            for key in (
+                "force_ble",
+                "ble_addr",
+                "ble_name",
+                "force_tcp",
+                "allow_bluetooth",
+                "target_device_name",
+                "target_device_address",
+            ):
+                interface_details.pop(key, None)
+            if interface_ble_fields:
+                interface_details.update(interface_ble_fields)
             interface_details["frequency"] = InterfaceEditor.coerce_rnode_frequency_hz(
                 interface_frequency,
             )

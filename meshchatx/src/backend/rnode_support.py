@@ -16,10 +16,12 @@ from __future__ import annotations
 
 import importlib.util
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
 _TRUE_STRINGS = ("true", "yes", "1", "on")
+_BLE_MAC_RE = re.compile(r"^(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
 
 
 def _optional_module_available(module_name: str) -> bool:
@@ -98,6 +100,26 @@ def rnode_port_is_tcp(port: object) -> bool:
 
 def rnode_port_is_ble(port: object) -> bool:
     return str(port or "").strip().lower().startswith("ble://")
+
+
+def rnode_ble_connection_fields(port: object) -> dict[str, object]:
+    """Return Android RNode BLE fields derived from a ble:// port.
+
+    The desktop RNode implementation understands port = ble://...
+    Reticulum's Android implementation does not parse that port and instead
+    requires force_ble plus either ble_addr or ble_name.
+    """
+    if not rnode_port_is_ble(port):
+        return {}
+    peer = str(port).strip()[len("ble://") :].strip()
+    if not peer:
+        return {}
+    fields: dict[str, object] = {"force_ble": True}
+    if _BLE_MAC_RE.fullmatch(peer):
+        fields["ble_addr"] = peer.upper()
+    else:
+        fields["ble_name"] = peer
+    return fields
 
 
 def _tcp_host_from_port(port: object) -> str | None:
@@ -196,6 +218,69 @@ def normalize_rnode_tcp_host_in_config(config_path: str) -> bool:
         if str(iface.get("tcp_host", "")).strip() != host_part:
             iface["tcp_host"] = host_part
             modified = True
+    if modified:
+        try:
+            cfg.write()
+        except Exception:
+            pass
+    return modified
+
+
+def normalize_rnode_ble_fields_in_config(config_path: str) -> bool:
+    """Backfill Android BLE fields for RNode entries using ble:// ports.
+
+    This also removes stale TCP/classic-Bluetooth selectors which otherwise
+    take precedence over BLE in Reticulum's Android RNodeInterface.
+
+    Returns True if any interfaces were modified.
+    """
+    import os
+
+    if not os.path.isfile(config_path):
+        return False
+    try:
+        from RNS.vendor.configobj import ConfigObj
+
+        cfg = ConfigObj(config_path)
+    except Exception:
+        return False
+
+    modified = False
+    interfaces = cfg.get("interfaces")
+    if not isinstance(interfaces, dict):
+        return False
+    for _iface_name, iface in interfaces.items():
+        if not isinstance(iface, dict):
+            continue
+        if not _is_rnode_tcp_config_type(iface.get("type")):
+            continue
+        fields = rnode_ble_connection_fields(iface.get("port"))
+        if not fields:
+            continue
+
+        expected_target = "ble_addr" if "ble_addr" in fields else "ble_name"
+        stale_target = "ble_name" if expected_target == "ble_addr" else "ble_addr"
+        stale_keys = (
+            stale_target,
+            "tcp_host",
+            "force_tcp",
+            "allow_bluetooth",
+            "target_device_name",
+            "target_device_address",
+        )
+        for key in stale_keys:
+            if key in iface:
+                iface.pop(key, None)
+                modified = True
+
+        if str(iface.get("force_ble", "")).strip().lower() not in _TRUE_STRINGS:
+            iface["force_ble"] = "true"
+            modified = True
+        expected_value = str(fields[expected_target])
+        if str(iface.get(expected_target, "")).strip() != expected_value:
+            iface[expected_target] = expected_value
+            modified = True
+
     if modified:
         try:
             cfg.write()

@@ -11,6 +11,8 @@ class Codec2MicrophoneRecorder {
         this.audioWorkletNode = null;
         this.microphoneMediaStream = null;
         this.mediaStreamSource = null;
+        this.scriptProcessorAccumulator = null;
+        this.workletFlushResolve = null;
     }
 
     static _downsampleBuffer(buffer, sourceSampleRate, targetSampleRate) {
@@ -55,8 +57,15 @@ class Codec2MicrophoneRecorder {
                         "/assets/js/codec2-emscripten/processor.js"
                     );
                     const wn = new AudioWorkletNode(this.audioContext, "audio-processor");
-                    wn.port.onmessage = async (event) => {
-                        this.audioChunks.push(event.data);
+                    wn.port.onmessage = (event) => {
+                        if (event.data?.type === "flushed") {
+                            this.workletFlushResolve?.();
+                            this.workletFlushResolve = null;
+                            return;
+                        }
+                        if (event.data?.length > 0) {
+                            this.audioChunks.push(event.data);
+                        }
                     };
                     tap = wn;
                 } catch (e) {
@@ -72,7 +81,12 @@ class Codec2MicrophoneRecorder {
                 }
                 try {
                     const bufferSize = 4096;
-                    const acc = { bufferIndex: 0, inputBuffer: new Float32Array(bufferSize) };
+                    const acc = {
+                        bufferIndex: 0,
+                        inputBuffer: new Float32Array(bufferSize),
+                        sourceSampleRate: this.audioContext.sampleRate || this.sampleRate,
+                    };
+                    this.scriptProcessorAccumulator = acc;
                     const sp = this.audioContext.createScriptProcessor(bufferSize, 1, 1);
                     sp.onaudioprocess = (e) => {
                         const inputData = e.inputBuffer.getChannelData(0);
@@ -83,7 +97,7 @@ class Codec2MicrophoneRecorder {
                             if (acc.bufferIndex === bufferSize) {
                                 const downsampledBuffer = Codec2MicrophoneRecorder._downsampleBuffer(
                                     acc.inputBuffer,
-                                    this.sampleRate,
+                                    acc.sourceSampleRate,
                                     this.sampleRate
                                 );
                                 this.audioChunks.push(downsampledBuffer);
@@ -160,6 +174,44 @@ class Codec2MicrophoneRecorder {
         }
     }
 
+    async _flushAudioWorklet() {
+        const port = this.audioWorkletNode?.port;
+        if (!port || this.scriptProcessorAccumulator) {
+            return;
+        }
+        await new Promise((resolve) => {
+            let completed = false;
+            const finish = () => {
+                if (completed) {
+                    return;
+                }
+                completed = true;
+                this.workletFlushResolve = null;
+                resolve();
+            };
+            this.workletFlushResolve = finish;
+            port.postMessage({ type: "flush" });
+            setTimeout(finish, 250);
+        });
+    }
+
+    _flushScriptProcessor() {
+        const acc = this.scriptProcessorAccumulator;
+        if (!acc || acc.bufferIndex === 0) {
+            return;
+        }
+        const pending = acc.inputBuffer.slice(0, acc.bufferIndex);
+        const downsampledBuffer = Codec2MicrophoneRecorder._downsampleBuffer(
+            pending,
+            acc.sourceSampleRate,
+            this.sampleRate
+        );
+        if (downsampledBuffer.length > 0) {
+            this.audioChunks.push(downsampledBuffer);
+        }
+        acc.bufferIndex = 0;
+    }
+
     async stop() {
         if (this.mediaStreamSource) {
             this.mediaStreamSource.disconnect();
@@ -168,6 +220,9 @@ class Codec2MicrophoneRecorder {
         if (this.microphoneMediaStream) {
             this.microphoneMediaStream.getTracks().forEach((track) => track.stop());
         }
+
+        await this._flushAudioWorklet();
+        this._flushScriptProcessor();
 
         if (this.audioWorkletNode) {
             try {
@@ -189,6 +244,7 @@ class Codec2MicrophoneRecorder {
             }
             this.audioWorkletNode = null;
         }
+        this.scriptProcessorAccumulator = null;
 
         if (this._silentTap) {
             try {
@@ -204,9 +260,12 @@ class Codec2MicrophoneRecorder {
         }
         this.audioContext = null;
 
-        var fullAudio = [];
+        const fullAudioLength = this.audioChunks.reduce((total, chunk) => total + chunk.length, 0);
+        const fullAudio = new Float32Array(fullAudioLength);
+        let fullAudioOffset = 0;
         for (const chunk of this.audioChunks) {
-            fullAudio = [...fullAudio, ...chunk];
+            fullAudio.set(chunk, fullAudioOffset);
+            fullAudioOffset += chunk.length;
         }
 
         const buffer = WavEncoder.encodeWAV(fullAudio, this.sampleRate);

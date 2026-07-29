@@ -970,11 +970,27 @@ new_block = '''        import importlib.util
             raise SystemError("Android-specific interface was used on non-Android OS")
 '''
 
+paired_devices_return = (
+    "            return self.bt_adapter.getDefaultAdapter().getBondedDevices()\n"
+)
+paired_devices_block = '''            devices = self.bt_adapter.getDefaultAdapter().getBondedDevices()
+            try:
+                return list(devices.toArray())
+            except Exception:
+                return list(devices)
+'''
+
 def patch_rnode_interface(data):
     text = data.decode("utf-8")
     start_idx = text.index(start_marker)
     end_idx = text.index(end_marker, start_idx) + len(end_marker)
-    return (text[:start_idx] + new_block + text[end_idx:]).encode("utf-8")
+    text = text[:start_idx] + new_block + text[end_idx:]
+    if text.count(paired_devices_return) != 1:
+        raise ValueError(
+            "Could not locate the Android getBondedDevices return statement",
+        )
+    text = text.replace(paired_devices_return, paired_devices_block, 1)
+    return text.encode("utf-8")
 
 patched_target = "RNS/Interfaces/Android/RNodeInterface.py"
 found = False

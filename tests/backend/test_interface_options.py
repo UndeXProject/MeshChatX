@@ -467,7 +467,36 @@ async def test_rnode_ble_uart_port_persisted(temp_dir):
         response = await handler(make_request(payload))
         body = json.loads(response.body)
         assert response.status == 200, body
-        assert config["interfaces"]["RadioBLE"]["port"] == "ble://aa:bb:cc:dd:ee:ff"
+        saved = config["interfaces"]["RadioBLE"]
+        assert saved["port"] == "ble://aa:bb:cc:dd:ee:ff"
+        assert saved["force_ble"] is True
+        assert saved["ble_addr"] == "AA:BB:CC:DD:EE:FF"
+        assert "ble_name" not in saved
+        assert "tcp_host" not in saved
+
+
+@pytest.mark.asyncio
+async def test_rnode_ble_name_persists_android_connection_fields(temp_dir):
+    config = ConfigDict({"reticulum": {}, "interfaces": {}})
+
+    async with make_app(temp_dir, config) as handler:
+        payload = {
+            "name": "RadioBLE",
+            "type": "RNodeInterface",
+            "port": "ble://RNode Test",
+            "frequency": 868000000,
+            "bandwidth": 125000,
+            "txpower": 7,
+            "spreadingfactor": 8,
+            "codingrate": 5,
+        }
+        response = await handler(make_request(payload))
+        body = json.loads(response.body)
+        assert response.status == 200, body
+        saved = config["interfaces"]["RadioBLE"]
+        assert saved["force_ble"] is True
+        assert saved["ble_name"] == "RNode Test"
+        assert "ble_addr" not in saved
 
 
 @pytest.mark.asyncio
